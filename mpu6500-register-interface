@@ -10,13 +10,23 @@
 
 uint8_t ACCEL_RANGE = 0x10;
 uint8_t GYRO_RANGE = 0x18;
-
+float g = 9.81; //gravitational constant
+unsigned long previous_time = 0; 
+float dt = 0.0; // Delta time in seconds
+float roll_Gyro_angle = 0.0;
+float pitch_Gyro_angle = 0.0;
+float roll = 0.0;
+float pitch = 0.0;
+float yaw = 0.0;
+float roll_Gyro = 0.0;
+float pitch_Gyro = 0.0;
+const float alpha = 0.98;
 int16_t accl_x, accl_y, accl_z; // variables for accelerometer raw data
 int16_t gyro_x, gyro_y, gyro_z; // variables for gyro raw data
 int16_t temperature; // variable for temp data
 
 void setup() {
-  Serial.begin(4800);
+  Serial.begin(9600);
   Wire.begin();
 
 //accelerometer config
@@ -49,6 +59,8 @@ void setup() {
   } else {
     Serial.println("Connection Failed.");
   }
+
+  previous_time = micros();
 }
 
 void loop() {
@@ -66,15 +78,49 @@ gyro_x = Wire.read()<<8 | Wire.read();   // reading registers: 0x43 (GYRO_XOUT_H
 gyro_y = Wire.read()<<8 | Wire.read();   // reading registers: 0x45 (GYRO_YOUT_H) and 0x46 (GYRO_YOUT_L)
 gyro_z = Wire.read()<<8 | Wire.read();   // reading registers: 0x47 (GYRO_ZOUT_H) and 0x48 (GYRO_ZOUT_L)
 
-//print out data on serial monitor
-Serial.print("aX = "); Serial.print((float)accl_x / ACCEL_SENSITIVITY); Serial.print("g");
-Serial.print(" | aY = "); Serial.print((float)accl_y / ACCEL_SENSITIVITY); Serial.print("g");
-Serial.print(" | aZ = "); Serial.print((float)accl_z / ACCEL_SENSITIVITY); Serial.print("g");
-Serial.print(" | tmp = "); Serial.print((float)temperature/333.87 + 21.00); Serial.print("°C");
-Serial.print(" | gX = "); Serial.print((float)gyro_x / GYRO_SENSITIVITY); Serial.print("°");
-Serial.print(" | gY = "); Serial.print((float)gyro_y / GYRO_SENSITIVITY); Serial.print("°");
-Serial.print(" | gZ = "); Serial.print((float)gyro_z / GYRO_SENSITIVITY); Serial.print("°");
-Serial.println();
 
+//calculating time elapsed, for gyro roll and pitch measurement
+unsigned long current_time = micros();
+dt = (float)(current_time - previous_time) / 1000000.0;
+previous_time = current_time;\
+
+//converting raw accelerometer values to g values with caliberation 
+float accl_x_g = ((float)accl_x - 66.14)/ ACCEL_SENSITIVITY;
+float accl_y_g = ((float)accl_y + 109.14)/ ACCEL_SENSITIVITY;
+float accl_z_g = ((float)accl_z - 342.29)/ ACCEL_SENSITIVITY;
+
+//Convert raw gyro data to an actual rate in Degrees Per Second
+float gyro_x_rate = ((float)gyro_x - 8.36)/ GYRO_SENSITIVITY; 
+float gyro_y_rate = ((float)gyro_y - 88.36)/ GYRO_SENSITIVITY;
+float gyro_z_rate = ((float)gyro_z + 7.64)/ GYRO_SENSITIVITY;
+
+//Accelerometer roll and pitch (no complementary filter)
+float roll_Accl = atan2(accl_y_g, accl_z_g) * 180.0 / PI;
+float pitch_Accl = atan2(-accl_x_g, sqrt(accl_y_g*accl_y_g + accl_z_g*accl_z_g)) * 180.0 / PI;
+
+//complementary filter
+float alpha = 0.5;
+if (abs(gyro_z_rate) < 0.1) gyro_z_rate = 0; // Ignore tiny "ghost" movements
+
+roll = roll_Accl * alpha + (1 - alpha)*(roll + gyro_x_rate*dt);
+pitch = pitch_Accl * alpha + (1 - alpha)*(pitch + gyro_y_rate*dt);
+yaw = yaw + (gyro_z_rate * dt);
+
+//print out roll and pitch
+Serial.print ("roll = "); Serial.print(roll); Serial.print("°");
+Serial.print (" pitch = "); Serial.print(pitch); Serial.print("°");
+Serial.print (" yaw = "); Serial.print(yaw); Serial.println("°");
+
+/*
+//print out data on serial monitor with caliberation to mitigate errors 
+Serial.print("aX = "); Serial.print(((float)accl_x - 66.14)/ ACCEL_SENSITIVITY ); Serial.print("g");
+Serial.print(" | aY = "); Serial.print(((float)accl_y + 109.14)/ ACCEL_SENSITIVITY ); Serial.print("g");
+Serial.print(" | aZ = "); Serial.print(((float)accl_z - 342.29)/ ACCEL_SENSITIVITY); Serial.print("g");
+Serial.print(" | tmp = "); Serial.print((float)temperature/333.87 + 21.00); Serial.print("°C");
+Serial.print(" | gX = "); Serial.print(((float)gyro_x - 8.36)/ GYRO_SENSITIVITY); Serial.print("°");
+Serial.print(" | gY = "); Serial.print(((float)gyro_y - 88.36)/ GYRO_SENSITIVITY); Serial.print("°");
+Serial.print(" | gZ = "); Serial.print(((float)gyro_z + 7.64)/ GYRO_SENSITIVITY); Serial.print("°");
+Serial.println();
+*/
 
 }
