@@ -103,7 +103,7 @@ float pitch_Accl = atan2(-accl_x_g, sqrt(accl_y_g*accl_y_g + accl_z_g*accl_z_g))
 
 //complementary filter
 float alpha = 0.5;
-if (abs(gyro_z_rate) < 0.3) gyro_z_rate = 0; // Ignore tiny "ghost" movements
+if (abs(gyro_z_rate) < 0.3) gyro_z_rate = 0; // Ignore tiny "ghost" movements (low pass filter)
 
 roll = roll_Accl * alpha + (1 - alpha)*(roll + gyro_x_rate*dt);
 pitch = pitch_Accl * alpha + (1 - alpha)*(pitch + gyro_y_rate*dt);
