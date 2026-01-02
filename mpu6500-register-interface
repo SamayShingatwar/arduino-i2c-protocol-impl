@@ -26,7 +26,7 @@ int16_t gyro_x, gyro_y, gyro_z; // variables for gyro raw data
 int16_t temperature; // variable for temp data
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   Wire.begin();
 
 //accelerometer config
@@ -45,6 +45,9 @@ void setup() {
   Wire.write(WHO_AM_I); //we are just pointing at the internal register, basically giving the internal addr to the device [IMU] to help us; we do not talk to internal registers.. just giving maibox addresses to the device to give us data from that particular addr
   Wire.endTransmission(false); //false stop means "i'm done giving orders, but don't hang up yet"; (repeated start condition) basically it keeps the communication line open/reserved for the current master.
   Wire.requestFrom(ICM_ADDR, 1, true); //requestFrom(addr, quantity, stop); quantity = #BYTES; 1 byte can store a number between 0-255 and since the register output for WHO_AM_I falls in that range, we use 1 byte of data;
+  if (Wire.available() < 14) {
+    return;  // skip this loop iteration if faulty data
+  }
 
   byte id = Wire.read(); 
   Serial.print("ID: 0x");
@@ -82,7 +85,7 @@ gyro_z = Wire.read()<<8 | Wire.read();   // reading registers: 0x47 (GYRO_ZOUT_H
 //calculating time elapsed, for gyro roll and pitch measurement
 unsigned long current_time = micros();
 dt = (float)(current_time - previous_time) / 1000000.0;
-previous_time = current_time;\
+previous_time = current_time;
 
 //converting raw accelerometer values to g values with caliberation 
 float accl_x_g = ((float)accl_x - 66.14)/ ACCEL_SENSITIVITY;
@@ -100,19 +103,29 @@ float pitch_Accl = atan2(-accl_x_g, sqrt(accl_y_g*accl_y_g + accl_z_g*accl_z_g))
 
 //complementary filter
 float alpha = 0.5;
-if (abs(gyro_z_rate) < 0.1) gyro_z_rate = 0; // Ignore tiny "ghost" movements
+if (abs(gyro_z_rate) < 0.3) gyro_z_rate = 0; // Ignore tiny "ghost" movements
 
 roll = roll_Accl * alpha + (1 - alpha)*(roll + gyro_x_rate*dt);
 pitch = pitch_Accl * alpha + (1 - alpha)*(pitch + gyro_y_rate*dt);
 yaw = yaw + (gyro_z_rate * dt);
 
-//print out roll and pitch
-Serial.print ("roll = "); Serial.print(roll); Serial.print("°");
-Serial.print (" pitch = "); Serial.print(pitch); Serial.print("°");
-Serial.print (" yaw = "); Serial.print(yaw); Serial.println("°");
+
+// Non-blocking rate limiter: ensures serial telemetry is transmitted
+// at a fixed frequency (50 Hz) by comparing elapsed time using millis()
+static unsigned long lastPrint = 0; //static variables are initialized once and remembered forever, even inside a function.
+if (millis() - lastPrint >= 20) {   // 50 Hz
+  lastPrint = millis();
+
+//print out roll, pitch, and yaw
+  Serial.print(roll); Serial.print(",");
+  Serial.print(pitch); Serial.print(",");
+  Serial.println(yaw);
+}
+
 
 /*
 //print out data on serial monitor with caliberation to mitigate errors 
+
 Serial.print("aX = "); Serial.print(((float)accl_x - 66.14)/ ACCEL_SENSITIVITY ); Serial.print("g");
 Serial.print(" | aY = "); Serial.print(((float)accl_y + 109.14)/ ACCEL_SENSITIVITY ); Serial.print("g");
 Serial.print(" | aZ = "); Serial.print(((float)accl_z - 342.29)/ ACCEL_SENSITIVITY); Serial.print("g");
